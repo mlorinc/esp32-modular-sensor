@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "sdkconfig.h"
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "wifi.h"
@@ -12,6 +13,13 @@
 #define WAIT_TIMEOUT_ERROR (-1)
 #define TRANSMIT_TIMEOUT_ERROR (2)
 #define TRANSMIT_BYTE_TIMEOUT_ERROR (255)
+
+#define PULL_UP_TIMEOUT (40)
+#define DHT_ZERO_RESPONSE_TIMEOUT (80)
+#define DHT_PULL_UP_RESPONSE_TIMEOUT (80)
+#define TRANSMIT_START_TIMEOUT (50)
+#define DATA_FRAME_START_TIMEOUT (70)
+#define DATA_FRAME_END_TIMEOUT (70)
 
 int64_t waitForLevel(int level, int64_t u_timeout)
 {
@@ -44,10 +52,11 @@ int64_t init_stream()
 {
     ESP_ERROR_CHECK(gpio_set_direction(GPIO_DHT11, GPIO_MODE_OUTPUT));
     ESP_ERROR_CHECK(gpio_set_level(GPIO_DHT11, 0));
-    vTaskDelay(20 / portTICK_PERIOD_MS);
+    // vTaskDelay(20 / portTICK_PERIOD_MS);
+    waitForLevel(1, 20000);
     ESP_ERROR_CHECK(gpio_set_level(GPIO_DHT11, 1));
     ESP_ERROR_CHECK(gpio_set_direction(GPIO_DHT11, GPIO_MODE_INPUT));
-    int64_t pull_up_time = waitForLevel(1, 40);
+    int64_t pull_up_time = waitForLevel(1, PULL_UP_TIMEOUT);
 
     if (pull_up_time == WAIT_TIMEOUT_ERROR)
     {
@@ -55,16 +64,14 @@ int64_t init_stream()
         return WAIT_TIMEOUT_ERROR;
     }
 
-    printf("level: %d\n", gpio_get_level(GPIO_DHT11));
-    int64_t dht_zero_response = waitForLevel(0, 80);
-    printf("level: %d\n", gpio_get_level(GPIO_DHT11));
+    int64_t dht_zero_response = waitForLevel(0, DHT_ZERO_RESPONSE_TIMEOUT + pull_up_time);
     if (dht_zero_response == WAIT_TIMEOUT_ERROR)
     {
         ESP_LOGE("waitForLevel", "init_stream dht_zero_response timed out");
         return WAIT_TIMEOUT_ERROR;
     }
 
-    int64_t dht_pull_up_response = waitForLevel(1, 80 + dht_zero_response);
+    int64_t dht_pull_up_response = waitForLevel(1, DHT_PULL_UP_RESPONSE_TIMEOUT + dht_zero_response);
 
     if (dht_pull_up_response == WAIT_TIMEOUT_ERROR)
     {
@@ -77,7 +84,7 @@ int64_t init_stream()
 
 uint8_t transmit_bit(int64_t u_accepted_delay)
 {
-    int64_t init_timeout = waitForLevel(0, 50 + u_accepted_delay);
+    int64_t init_timeout = waitForLevel(0, TRANSMIT_START_TIMEOUT + u_accepted_delay);
 
     if (init_timeout == WAIT_TIMEOUT_ERROR)
     {
@@ -85,24 +92,24 @@ uint8_t transmit_bit(int64_t u_accepted_delay)
         return TRANSMIT_TIMEOUT_ERROR;
     }
 
-    int64_t data_duration = waitForLevel(1, 70 + init_timeout);
+    int64_t data_start = waitForLevel(1, DATA_FRAME_START_TIMEOUT + init_timeout);
 
+    if (data_start == WAIT_TIMEOUT_ERROR)
+    {
+        ESP_LOGE("waitForLevel", "transmit_bit data_start timed out");
+        return TRANSMIT_TIMEOUT_ERROR;
+    }
+
+    int64_t data_duration = DATA_FRAME_START_TIMEOUT - waitForLevel(0, DATA_FRAME_END_TIMEOUT);
+
+    // printf("duration: %lld\n", end);
     if (data_duration == WAIT_TIMEOUT_ERROR)
     {
         ESP_LOGE("waitForLevel", "transmit_bit data_duration timed out");
         return TRANSMIT_TIMEOUT_ERROR;
     }
 
-    int64_t duration = 70 - waitForLevel(0, 80);
-
-    // printf("duration: %lld\n", end);
-    if (duration == WAIT_TIMEOUT_ERROR)
-    {
-        ESP_LOGE("waitForLevel", "transmit_bit end timed out");
-        return TRANSMIT_TIMEOUT_ERROR;
-    }
-
-    return (duration >= 31) ? (1) : (0);
+    return (data_duration >= 31) ? (1) : (0);
 }
 
 uint8_t transmit_byte(int64_t u_accepted_delay)
@@ -130,10 +137,11 @@ uint8_t transmit_byte(int64_t u_accepted_delay)
 
 void dht11_task(void *pvParameter)
 {
-
     while (1)
-    {
+    {   
         vTaskDelay(2000 / portTICK_PERIOD_MS);
+        portMUX_TYPE timeCriticalMutex = portMUX_INITIALIZER_UNLOCKED;
+        taskENTER_CRITICAL(&timeCriticalMutex);
         int64_t timeout = init_stream();
         if (timeout == WAIT_TIMEOUT_ERROR)
         {
@@ -178,6 +186,7 @@ void dht11_task(void *pvParameter)
             goto ERROR;
         }
 
+        taskEXIT_CRITICAL(&timeCriticalMutex);
         uint8_t all_sum = integral_humidity + decimal_humidity + integral_temperature + decimal_temperature;
         ESP_LOGI("verification", "CRC: %d\n", (all_sum > 0) && (all_sum == crc));
         ESP_LOGI("data", "temperature: %d.%d\n Celsius", integral_temperature, decimal_temperature);
@@ -185,6 +194,7 @@ void dht11_task(void *pvParameter)
         continue;
         
         ERROR:
+            taskEXIT_CRITICAL(&timeCriticalMutex);
             stabilize(1, 2000000);
             continue;
     }
@@ -196,5 +206,6 @@ void app_main()
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(gpio_set_direction(GPIO_DHT11, GPIO_MODE_INPUT));
     // wifi_init_sta();
+    // dht11_task(NULL);
     xTaskCreate(&dht11_task, "dht11_task", 2048, NULL, 5, NULL);
 }
