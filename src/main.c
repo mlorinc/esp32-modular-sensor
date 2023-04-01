@@ -8,6 +8,7 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "wifi.h"
+#include "utc.h"
 
 #define GPIO_DHT11 (14)
 #define WAIT_TIMEOUT_ERROR (-1)
@@ -139,9 +140,11 @@ void dht11_task(void *pvParameter)
 {
     while (1)
     {   
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-        portMUX_TYPE timeCriticalMutex = portMUX_INITIALIZER_UNLOCKED;
-        taskENTER_CRITICAL(&timeCriticalMutex);
+        printf("Time: %s\n", get_utc_time());
+
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        // portMUX_TYPE timeCriticalMutex = portMUX_INITIALIZER_UNLOCKED;
+        // taskENTER_CRITICAL(&timeCriticalMutex);
         int64_t timeout = init_stream();
         if (timeout == WAIT_TIMEOUT_ERROR)
         {
@@ -186,16 +189,15 @@ void dht11_task(void *pvParameter)
             goto ERROR;
         }
 
-        taskEXIT_CRITICAL(&timeCriticalMutex);
+        // taskEXIT_CRITICAL(&timeCriticalMutex);
         uint8_t all_sum = integral_humidity + decimal_humidity + integral_temperature + decimal_temperature;
-        ESP_LOGI("verification", "CRC: %d\n", (all_sum > 0) && (all_sum == crc));
+        ESP_LOGI("data", "CRC: %d\n", (all_sum > 0) && (all_sum == crc));
         ESP_LOGI("data", "temperature: %d.%d\n Celsius", integral_temperature, decimal_temperature);
         ESP_LOGI("data", "humidity: %d.%d%%\n", integral_humidity, decimal_humidity);
         continue;
         
         ERROR:
-            taskEXIT_CRITICAL(&timeCriticalMutex);
-            stabilize(1, 2000000);
+            // taskEXIT_CRITICAL(&timeCriticalMutex);
             continue;
     }
 }
@@ -205,7 +207,19 @@ void app_main()
     esp_rom_gpio_pad_select_gpio(GPIO_DHT11);
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(gpio_set_direction(GPIO_DHT11, GPIO_MODE_INPUT));
-    // wifi_init_sta();
-    // dht11_task(NULL);
+
+    wifi_init();
+    wifi_start();
+    ntp_init();
+    
+    if (ntp_wait(30000000) != ESP_OK)
+    {
+        while (1)
+        {
+            /* noop */
+        }
+    }
+    wifi_stop();
+    
     xTaskCreate(&dht11_task, "dht11_task", 2048, NULL, 5, NULL);
 }
