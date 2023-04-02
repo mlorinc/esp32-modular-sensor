@@ -42,14 +42,39 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
+        s_retry_num = 0;
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
-            esp_wifi_connect();
+            esp_err_t err = esp_wifi_connect();
+
+            // switch (err)
+            // {
+            //     case ESP_OK:
+            //         ESP_LOGI(TAG, "connect OK", err);
+            //         break;
+            //     case ESP_ERR_WIFI_NOT_INIT:
+            //         ESP_LOGI(TAG, "WiFi driver was not installed by esp_wifi_init");
+            //         break;
+            //     case ESP_ERR_WIFI_NOT_STARTED:
+            //         ESP_LOGI(TAG, "WiFi driver was not started by esp_wifi_start");
+            //         break;
+
+            //     case ESP_ERR_WIFI_CONN:
+            //         ESP_LOGI(TAG, "WiFi internal control block of station or soft-AP error");
+            //         break;
+            //     case ESP_ERR_WIFI_SSID:
+            //         ESP_LOGI(TAG, "SSID is invalid");
+            //         break;
+            //     default:
+            //         ESP_LOGI(TAG, "unknown wifi error state %d", err);
+            //         break;
+            // }
+
             s_retry_num++;
             ESP_LOGI(TAG, "retry to connect to the AP");
         } 
         else {
-            xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+            // xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
         ESP_LOGI(TAG,"connect to the AP fail");
@@ -57,7 +82,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
-        xEventGroupClearBits(s_wifi_event_group, WIFI_FAIL_BIT);
+        // xEventGroupClearBits(s_wifi_event_group, WIFI_FAIL_BIT);
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -114,7 +139,7 @@ int wifi_start(void) {
     return status;
 }
 
-void wifi_init(void)
+int wifi_init(void)
 {
     s_wifi_event_group = xEventGroupCreate();
 
@@ -126,7 +151,7 @@ void wifi_init(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     // ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    // ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
     wifi_config_t wifi_config = {
         .sta = {
@@ -149,4 +174,5 @@ void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
     ESP_LOGI(TAG, "wifi_init finished.");
+    return wifi_start();
 }

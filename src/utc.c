@@ -13,11 +13,13 @@ char *get_utc_time(void) {
     struct tm time_info;
 
     time(&now);
-
+    
     localtime_r(&now, &time_info);
     strftime(time_string, sizeof(time_string), "%c", &time_info);
     return time_string;
 }
+
+
 
 void ntp_init(void) {
     sntp_setservername(0, "pool.ntp.org");

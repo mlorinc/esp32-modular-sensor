@@ -2,6 +2,7 @@
 #define __H_DHT11
 #include <stdlib.h>
 #include "driver/gpio.h"
+#include "probe.h"
 
 
 #define TRANSMIT_TIMEOUT_ERROR (2)
@@ -23,5 +24,5 @@ typedef struct dht11_data {
     uint8_t humidity_decimal;
 } dht11_data_t;
 
-int get_measurement(gpio_num_t pin, dht11_data_t *empty_data);
+int get_measurement(dht11_measurement_t *probe_data, dht11_data_t *empty_data);
 #endif

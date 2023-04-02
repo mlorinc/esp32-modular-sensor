@@ -1,8 +1,11 @@
 #ifndef __H_UTILS
 #define __H_UTILS
 #include <stdlib.h>
-#include "driver/gpio.h"
+#include "driver/gptimer.h"
 #define WAIT_TIMEOUT_ERROR (-1)
 
-int64_t wait_for_level(gpio_num_t pin, int level, int64_t u_timeout);
+uint64_t microseconds(gptimer_handle_t timer);
+gptimer_handle_t hw_timer_init();
+int hw_timer_pause(gptimer_handle_t timer);
+int hw_timer_reset(gptimer_handle_t timer);
 #endif
