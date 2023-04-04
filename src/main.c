@@ -1,38 +1,36 @@
 #include <stdio.h>
+#include <string.h>
+#include <inttypes.h>
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "sdkconfig.h"
 #include "driver/gpio.h"
-#include "esp_timer.h"
 #include "wifi.h"
 #include "utc.h"
 #include "dht11.h"
 #include "config.h"
 #include "probe.h"
-#include "rom/ets_sys.h"
-#include <inttypes.h>
+#include "mqtt.h"
 
-void stabilize(int level, int64_t duration)
-{
-    int64_t start = esp_timer_get_time();
-    while (esp_timer_get_time() - start <= duration)
-    {
-        if (gpio_get_level(GPIO_DHT11) != 1)
-        {
-            start = esp_timer_get_time();
-        }
-    }
-}
+#define MQTT_BUFFER_SIZE (256)
+#define REFRESH_INTERVAL (1000 * 60 * 10)
+#define STABILIZATION_WAIT (250)
+#define FAILURE_WAIT (250)
 
 void dht11_task(void *pvParameter)
-{
+{    
     dht11_data_t data = { 0 };
+    char buffer[MQTT_BUFFER_SIZE] = { 0 };
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     while (1)
     {
+        if (!is_synced()) {
+            vTaskDelay(2000 / portTICK_PERIOD_MS);
+            continue;
+        }
+
         printf("Time: %s\n", get_utc_time());
         reset_probe();
         gpio_set_direction(GPIO_DHT11, GPIO_MODE_OUTPUT);
@@ -40,11 +38,11 @@ void dht11_task(void *pvParameter)
         vTaskDelay(20 / portTICK_PERIOD_MS);
         gpio_set_level(GPIO_DHT11, 1);
         gpio_set_direction(GPIO_DHT11, GPIO_MODE_INPUT);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(STABILIZATION_WAIT / portTICK_PERIOD_MS);
 
         if (!is_probe_full(GPIO_DHT11)) {
             ESP_LOGI("wait", "not full abort, size: %d", get_probe_size());
-            vTaskDelay(250 / portTICK_PERIOD_MS);
+            vTaskDelay(FAILURE_WAIT / portTICK_PERIOD_MS);
             continue;
         }
         
@@ -52,21 +50,19 @@ void dht11_task(void *pvParameter)
             ESP_LOGI("data", "CRC: %d\n", data.crc);
             ESP_LOGI("data", "temperature: %d.%d\n Celsius", data.temperature_integral, data.temperature_decimal);
             ESP_LOGI("data", "humidity: %d.%d%%\n", data.humidity_integral, data.humidity_decimal);
+            memset(buffer, 0, MQTT_BUFFER_SIZE);
+            sprintf(buffer, "{utc:\"%s\",temperature:%d.%d,humidity:%d.%d}", get_utc_time(), data.temperature_integral, data.temperature_decimal, data.humidity_integral, data.humidity_decimal);
+            int length = strlen(buffer);
+            ESP_LOGI("data", "mqtt: %s", buffer);
+            if (mqtt_send_data(buffer, length) == -1) {
+                ESP_LOGE("data", "could not send data through MQTT");
+            }
         }
         else {
             ESP_LOGI("data", "error while measuring data from DHT11");
         }
 
-        vTaskDelay(4900 / portTICK_PERIOD_MS);
-
-        // printf("Sequence: ");
-        // dht11_measurement_t *data = get_pin_data(GPIO_DHT11);
-
-        // for (size_t i = 0; i < DHT11_FRAME_SIZE; i++)
-        // {
-        //     printf("t=%" PRIu64 ";v=%d , ", data[i].us, data[i].level);
-        // }
-        // printf("\n");
+        vTaskDelay((REFRESH_INTERVAL - STABILIZATION_WAIT) / portTICK_PERIOD_MS);
     }
 }
 
@@ -84,16 +80,17 @@ void app_main()
         return;
     }
 
+    ESP_LOGE("ntp", "ntp init");
     ntp_init();
+    ESP_LOGE("ntp", "ntp started");
 
-    if (ntp_wait(30000000) != ESP_OK)
-    {
-        return;
+    ESP_LOGE("mqtt", "mqtt init");
+    if (mqtt_init() != ESP_OK) {
+        ESP_LOGE("mqtt", "mqtt not connected");
+        while(1);
     }
-    // ntp_stop();
-    // wifi_stop();
-    // dht11_task(NULL);
+    ESP_LOGE("mqtt", "mqtt started");
 
     register_pin(GPIO_DHT11, 16);
-    xTaskCreate(&dht11_task, "dht11_task", 2048, NULL, 5, NULL);
+    xTaskCreate(&dht11_task, "dht11_task", 4096, NULL, 5, NULL);
 }
