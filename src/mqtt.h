@@ -5,5 +5,6 @@
 
 int mqtt_init();
 int mqtt_send_data(const char* data, int length);
+uint8_t mqtt_connected();
 
 #endif

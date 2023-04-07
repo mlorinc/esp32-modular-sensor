@@ -5,6 +5,7 @@
 #include "mqtt_client.h"
 
 esp_mqtt_client_handle_t client;
+static uint8_t connected = 0;
 static const char *TAG = "MQTT_EXAMPLE";
 
 static void log_error_if_nonzero(const char *message, int error_code)
@@ -13,6 +14,11 @@ static void log_error_if_nonzero(const char *message, int error_code)
         ESP_LOGE(TAG, "Last error %s: 0x%x", message, error_code);
     }
 }
+
+uint8_t mqtt_connected() {
+    return connected;
+}
+
 
 /*
  * @brief Event handler registered to receive MQTT events
@@ -34,11 +40,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
         esp_mqtt_client_subscribe(client, "v1/devices/me/xlorin01/telemetry", 1);
+        connected = 1;
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+        connected = 0;
         // esp_mqtt_client_reconnect(client);
-        esp_mqtt_client_unsubscribe(client, "v1/devices/me/xlorin01/telemetry");
+        // esp_mqtt_client_unsubscribe(client, "v1/devices/me/xlorin01/telemetry");
         break;
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);

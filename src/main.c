@@ -15,18 +15,52 @@
 #include "mqtt.h"
 
 #define MQTT_BUFFER_SIZE (256)
-#define REFRESH_INTERVAL (1000 * 60 * 10)
+#define REFRESH_INTERVAL (0.5*1000 * 60) // 1 minutes
 #define STABILIZATION_WAIT (250)
 #define FAILURE_WAIT (250)
+
+void report_measurement(char *buffer, dht11_data_t *data) {
+    ESP_LOGI("data", "CRC: %d\n", data->crc);
+    ESP_LOGI("data", "temperature: %d.%d\n Celsius", data->temperature_integral, data->temperature_decimal);
+    ESP_LOGI("data", "humidity: %d.%d%%\n", data->humidity_integral, data->humidity_decimal);
+    memset(buffer, 0, MQTT_BUFFER_SIZE);
+    sprintf(buffer, "{utc:\"%s\",temperature:%d.%d,humidity:%d.%d}", get_utc_time(), data->temperature_integral, data->temperature_decimal, data->humidity_integral, data->humidity_decimal);
+    int length = strlen(buffer);
+    ESP_LOGI("data", "mqtt: %s", buffer);
+    if (mqtt_send_data(buffer, length) == -1) {
+        ESP_LOGE("data", "could not send data through MQTT");
+    }
+}
 
 void dht11_task(void *pvParameter)
 {    
     dht11_data_t data = { 0 };
     char buffer[MQTT_BUFFER_SIZE] = { 0 };
+
+    while (!is_synced()) {
+        ESP_LOGE("ntp", "waiting ntp to be synced");
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+
     vTaskDelay(2000 / portTICK_PERIOD_MS);
+
+
+    ESP_LOGE("mqtt", "mqtt init");
+    if (mqtt_init() != ESP_OK) {
+        ESP_LOGE("mqtt", "mqtt not connected");
+        return;
+    }
+
+    while (!mqtt_connected()) {
+        ESP_LOGE("mqtt", "waiting mqtt to be connected");
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    ESP_LOGE("mqtt", "mqtt started");
+
+
     while (1)
     {
-        if (!is_synced()) {
+        if (!is_synced() || !mqtt_connected()) {
             vTaskDelay(2000 / portTICK_PERIOD_MS);
             continue;
         }
@@ -47,19 +81,12 @@ void dht11_task(void *pvParameter)
         }
         
         if (get_measurement(get_pin_data(GPIO_DHT11), &data) == ESP_OK) {
-            ESP_LOGI("data", "CRC: %d\n", data.crc);
-            ESP_LOGI("data", "temperature: %d.%d\n Celsius", data.temperature_integral, data.temperature_decimal);
-            ESP_LOGI("data", "humidity: %d.%d%%\n", data.humidity_integral, data.humidity_decimal);
-            memset(buffer, 0, MQTT_BUFFER_SIZE);
-            sprintf(buffer, "{utc:\"%s\",temperature:%d.%d,humidity:%d.%d}", get_utc_time(), data.temperature_integral, data.temperature_decimal, data.humidity_integral, data.humidity_decimal);
-            int length = strlen(buffer);
-            ESP_LOGI("data", "mqtt: %s", buffer);
-            if (mqtt_send_data(buffer, length) == -1) {
-                ESP_LOGE("data", "could not send data through MQTT");
-            }
+            report_measurement(buffer, &data);
         }
         else {
             ESP_LOGI("data", "error while measuring data from DHT11");
+            vTaskDelay(FAILURE_WAIT / portTICK_PERIOD_MS);
+            continue;
         }
 
         vTaskDelay((REFRESH_INTERVAL - STABILIZATION_WAIT) / portTICK_PERIOD_MS);
@@ -72,25 +99,13 @@ void app_main()
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(gpio_set_direction(GPIO_DHT11, GPIO_MODE_INPUT));
 
-    // wifi_init();
-
     if (wifi_init() != ESP_OK)
     {
         ESP_LOGE("wifi", "could not connect to the wifi");
         return;
     }
-
-    ESP_LOGE("ntp", "ntp init");
+    
     ntp_init();
-    ESP_LOGE("ntp", "ntp started");
-
-    ESP_LOGE("mqtt", "mqtt init");
-    if (mqtt_init() != ESP_OK) {
-        ESP_LOGE("mqtt", "mqtt not connected");
-        while(1);
-    }
-    ESP_LOGE("mqtt", "mqtt started");
-
     register_pin(GPIO_DHT11, 16);
     xTaskCreate(&dht11_task, "dht11_task", 4096, NULL, 5, NULL);
 }

@@ -7,6 +7,6 @@
 char *get_utc_time(void);
 void ntp_init(void);
 void ntp_stop(void);
-int ntp_sync();
+void ntp_sync();
 uint8_t is_synced();
 #endif
