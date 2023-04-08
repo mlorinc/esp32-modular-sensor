@@ -13,6 +13,7 @@
 #include "config.h"
 #include "probe.h"
 #include "mqtt.h"
+#include "temperature_predictor.h"
 
 #define MQTT_BUFFER_SIZE (256)
 #define REFRESH_INTERVAL (0.5*1000 * 60) // 1 minutes

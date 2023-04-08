@@ -3,6 +3,26 @@
         "freertos.h": "c",
         "task.h": "c",
         "gpio.h": "c",
-        "esp_log.h": "c"
+        "esp_log.h": "c",
+        "nvs_flash.h": "c",
+        "esp_timer.h": "c",
+        "sdkconfig.h": "c",
+        "esp_system.h": "c",
+        "esp_sntp.h": "c",
+        "esp_netif.h": "c",
+        "time.h": "c",
+        "sntp.h": "c",
+        "sntp_opts.h": "c",
+        "ip_addr.h": "c",
+        "utils.h": "c",
+        "dht11.h": "c",
+        "stdlib.h": "c",
+        "ets_sys.h": "c",
+        "timer.h": "c",
+        "queue.h": "c",
+        "config.h": "c",
+        "gptimer.h": "c",
+        "mqtt.h": "c",
+        "temperature_predictor.h": "c"
     }
 }
