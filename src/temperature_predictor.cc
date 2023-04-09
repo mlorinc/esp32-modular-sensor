@@ -68,28 +68,6 @@ int temperature_model_init()
         return 7;
     }
 
-    // Obtain pointers to the model's input and output tensors.
-    TfLiteTensor *input = interpreter->input(0);
-    TfLiteTensor *output = interpreter->output(0);
-
-    if ((input->type != kTfLiteFloat32) || (output->type != kTfLiteFloat32) || (input->dims->size != 2) || (input->dims->data[0] != 1) ||
-        (input->dims->data[1] !=
-         (k_feature_element_count * window_size)))
-    {
-        printf("Bad input tensor parameters in model");
-        printf("input->type = %d\n", input->type);
-        printf("input->dims->size = %d\n", input->dims->size);
-        printf("input->dims->data[0] = %d\n", input->dims->data[0]);
-        printf("input->dims->data[1] = %d\n", input->dims->data[1]);
-        printf("input->params.scale = %f\n", input->params.scale);
-        printf("input->params.zero_point = %ld\n", input->params.zero_point);
-        printf("output->type = %d\n", output->type);
-        printf("output->dims->size = %d\n", output->dims->size);
-        printf("output->dims->data[0] = %d\n", output->dims->data[0]);
-        printf("output->params.scale = %f\n", output->params.scale);
-        printf("output->params.zero_point = %ld\n", output->params.zero_point);
-        return 8;
-    }
     return 0;
 }
 
@@ -101,14 +79,6 @@ float temperature_model_interfere(float *temperatures, float *humidities)
     // Copy feature buffer to input tensor
     for (int i = 0; i < window_size; i++)
     {
-        // Quantize the input from floating-point to integer
-        // temperatures.length = windows_size * k_feature_element_count
-        // int8_t temperature_quantized = temperatures[i] / input->params.scale + input->params.zero_point;
-        // int8_t humidity_quantized = humidities[i] / input->params.scale + input->params.zero_point;
-
-        // Place the quantized input in the model's input tensor
-        // model_input_buffer[k_feature_element_count * i] = temperature_quantized;
-        // model_input_buffer[k_feature_element_count * i + 1] = humidity_quantized;
         input->data.f[k_feature_element_count * i] = temperatures[i];
         input->data.f[k_feature_element_count * i + 1] = humidities[i];
     }
@@ -129,12 +99,6 @@ float temperature_model_interfere(float *temperatures, float *humidities)
     }
 
     return output->data.f[0];
-    // Obtain the quantized output from model's output tensor
-    // int8_t y_quantized = output->data.int8[0];
-    // // Dequantize the output from integer to floating-point
-    // printf("output->params.zero_point = %ld\n", output->params.zero_point);
-    // printf("output->params.scale = %f\n", output->params.scale);
-    // return (y_quantized - output->params.zero_point) * output->params.scale;
 }
 #else
     int temperature_model_init() {

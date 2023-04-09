@@ -17,16 +17,16 @@
 #include "array_queue.h"
 
 #define MQTT_BUFFER_SIZE (256)
-#define REFRESH_INTERVAL 3000 // (0.5*1000 * 60) // 30s
+#define REFRESH_INTERVAL (0.5 * 1000 * 60) // 30s
 #define STABILIZATION_WAIT (250)
 #define FAILURE_WAIT (250)
 
-
-float temperatures[8] = { 0 };
-float humidities[8] = { 0 };
+float temperatures[8] = {0};
+float humidities[8] = {0};
 uint8_t measured_values = 0;
 
-void report_measurement(char *buffer, dht11_data_t *data) {
+void report_measurement(char *buffer, dht11_data_t *data)
+{
     ESP_LOGI("data", "CRC: %d\n", data->crc);
     ESP_LOGI("data", "temperature: %d.%d\n Celsius", data->temperature_integral, data->temperature_decimal);
     ESP_LOGI("data", "humidity: %d.%d%%\n", data->humidity_integral, data->humidity_decimal);
@@ -34,81 +34,90 @@ void report_measurement(char *buffer, dht11_data_t *data) {
     sprintf(buffer, "{utc:\"%s\",temperature:%d.%d,humidity:%d.%d}", get_utc_time(), data->temperature_integral, data->temperature_decimal, data->humidity_integral, data->humidity_decimal);
     int length = strlen(buffer);
     ESP_LOGI("data", "mqtt: %s", buffer);
-    // if (mqtt_send_data(buffer, length) == -1) {
-    //     ESP_LOGE("data", "could not send data through MQTT");
-    // }
+    if (mqtt_send_data(buffer, length) == -1)
+    {
+        ESP_LOGE("data", "could not send data through MQTT");
+    }
 }
 
 void dht11_task(void *pvParameter)
-{    
-    dht11_data_t data = { 0 };
-    char buffer[MQTT_BUFFER_SIZE] = { 0 };
+{
+    probe_measurement_t dht_data[DHT11_FRAME_SIZE] = {0};
+    probe_t dht = probe_init(GPIO_DHT11, DHT11_FRAME_SIZE, dht_data);
+    probe_enable(&dht);
+    dht11_data_t data = {0};
+    char buffer[MQTT_BUFFER_SIZE] = {0};
 
-    while (!is_synced()) {
+    while (!is_synced())
+    {
         ESP_LOGE("ntp", "waiting ntp to be synced");
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 
     vTaskDelay(2000 / portTICK_PERIOD_MS);
 
-
     ESP_LOGE("mqtt", "mqtt init");
-    if (mqtt_init() != ESP_OK) {
+    if (mqtt_init() != ESP_OK)
+    {
         ESP_LOGE("mqtt", "mqtt not connected");
         return;
     }
 
-    while (!mqtt_connected()) {
+    while (!mqtt_connected())
+    {
         ESP_LOGE("mqtt", "waiting mqtt to be connected");
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
     ESP_LOGE("mqtt", "mqtt started");
 
-
     while (1)
     {
-        if (!is_synced() || !mqtt_connected()) {
+        if (!is_synced() || !mqtt_connected())
+        {
             vTaskDelay(2000 / portTICK_PERIOD_MS);
             continue;
         }
 
         ESP_LOGI("wait", "Time: %s\n", get_utc_time());
-        reset_probe();
-        gpio_set_direction(GPIO_DHT11, GPIO_MODE_OUTPUT);
-        gpio_set_level(GPIO_DHT11, 0);
-        vTaskDelay(20 / portTICK_PERIOD_MS);
-        gpio_set_level(GPIO_DHT11, 1);
-        gpio_set_direction(GPIO_DHT11, GPIO_MODE_INPUT);
+        probe_reset_capture(&dht);
+        dht11_begin_transmission(&dht);
         vTaskDelay(STABILIZATION_WAIT / portTICK_PERIOD_MS);
 
-        if (!is_probe_full(GPIO_DHT11)) {
-            ESP_LOGI("wait", "not full abort, size: %d", get_probe_size());
+        if (!probe_has_data(&dht))
+        {
+            ESP_LOGI("wait", "not full abort, size: %d", probe_get_captured_data_count(&dht));
             vTaskDelay(FAILURE_WAIT / portTICK_PERIOD_MS);
             continue;
         }
-        
-        if (get_measurement(get_pin_data(GPIO_DHT11), &data) == ESP_OK) {
+
+        if (dht11_get_measurement(dht11_get_data(&dht), &data) == ESP_OK)
+        {
             report_measurement(buffer, &data);
-            #ifdef PREDICTION_MODE
+#ifdef PREDICTION_MODE
             queue_push(temperatures, 8, data.temperature_integral + decimal_to_float(data.temperature_decimal));
             queue_push(humidities, 8, data.humidity_integral + decimal_to_float(data.humidity_decimal));
-            if (measured_values < 8) {
+            if (measured_values < 8)
+            {
                 measured_values++;
             }
 
-            if (measured_values == 8) {
+            if (measured_values == 8)
+            {
                 float predicted_temperature = temperature_model_interfere(temperatures, humidities);
                 ESP_LOGI("measurement", "predicted temperature: %f\n", predicted_temperature);
             }
-            else if (measured_values > 8) {
+            else if (measured_values > 8)
+            {
                 ESP_LOGE("measurement", "unexpected measured values state");
             }
-            else {
+            else
+            {
                 ESP_LOGI("measurement", "skipping prediction; not enough data %u/8", measured_values);
             }
-            #endif
+#endif
         }
-        else {
+        else
+        {
             ESP_LOGI("data", "error while measuring data from DHT11");
             vTaskDelay(FAILURE_WAIT / portTICK_PERIOD_MS);
             continue;
@@ -124,7 +133,8 @@ void app_main()
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(gpio_set_direction(GPIO_DHT11, GPIO_MODE_INPUT));
 
-    if(temperature_model_init() != 0) {
+    if (temperature_model_init() != 0)
+    {
         ESP_LOGE("tf", "could not init Tensorflow Lite");
         return;
     }
@@ -136,6 +146,5 @@ void app_main()
     }
 
     ntp_init();
-    register_pin(GPIO_DHT11, 16);
     xTaskCreate(&dht11_task, "dht11_task", 4096, NULL, 5, NULL);
 }

@@ -9,57 +9,69 @@
 
 #define ESP_INTR_FLAG_DEFAULT (0)
 
-dht11_measurement_t dht_data[DHT11_FRAME_SIZE] = { 0 };
-int size = 0;
-gptimer_handle_t timer;
-
 static void IRAM_ATTR gpio_dht_isr_handler(void *arg)
 {
-    if (size >= DHT11_FRAME_SIZE)
+    probe_t *dht = (probe_t*) arg;
+
+    if (probe_get_captured_data_count(dht) >= DHT11_FRAME_SIZE)
     {
         return;
     }
     
     int level = gpio_get_level(GPIO_DHT11);
 
-    if (size == 0 && level == 1)
+    if (probe_get_captured_data_count(dht) == 0 && level == 1)
     {
         // ignore glitch
         return;
     }
 
-    dht11_measurement_t data = {
+    probe_measurement_t data = {
         .level = level,
-        .us = microseconds(timer)
+        .us = microseconds(dht->timer)
     };
 
-    dht_data[size++] = data;
+    dht->buffer[dht->captured_data++] = data;
 }
 
-void register_pin(gpio_num_t pin, int queue_size)
+probe_t probe_init(gpio_num_t pin, uint16_t queue_size, probe_measurement_t *buffer)
 {
     // install gpio isr service
-    timer = hw_timer_init();
+    gptimer_handle_t timer = hw_timer_init();
+    probe_t dht = {
+        .pin = pin,
+        .queue_size = queue_size,
+        .timer = timer,
+        .buffer = buffer,
+        .captured_data = 0
+    };
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     gpio_set_intr_type(pin, GPIO_INTR_ANYEDGE);
-    gpio_isr_handler_add(pin, gpio_dht_isr_handler, NULL);
+    return dht;
 }
 
-dht11_measurement_t *get_pin_data(gpio_num_t pin)
+void probe_enable(probe_t *dht) 
 {
-    return dht_data;
+    gpio_isr_handler_add(dht->pin, gpio_dht_isr_handler, dht);
 }
 
-int is_probe_full(gpio_num_t pin)
+probe_measurement_t* dht11_get_data(probe_t *dht)
 {
-    return size == DHT11_FRAME_SIZE;
+    return dht->buffer;
 }
 
-void reset_probe() {
-    hw_timer_reset(timer);
-    size = 0;
+int probe_has_data(probe_t *dht)
+{
+    return dht->captured_data == dht->queue_size;
 }
 
-int get_probe_size() {
-    return size;
+void probe_reset_capture(probe_t *dht)
+{
+    hw_timer_reset(dht->timer);
+    dht->captured_data = 0;
+}
+
+int probe_get_captured_data_count(probe_t *dht) 
+{
+    return dht->captured_data;
 }
