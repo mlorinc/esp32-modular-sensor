@@ -33,20 +33,6 @@ void ntp_sync_callback(struct timeval *t) {
     printf("%s\n", get_utc_time());
     sntp_sync_status_t status = sntp_get_sync_status();
     synced = (status == SNTP_SYNC_STATUS_COMPLETED) ? (1) : (0);
-    
-
-    // if (time_info.tm_year == 70)
-    // {
-    //     ESP_LOGI("ntp", "sync year was not correct: year=%d", time_info.tm_year);
-    //     synced = 0;
-    // }
-    // else if (time_info.tm_year != 70 && status == SNTP_SYNC_STATUS_COMPLETED){
-    //     ESP_LOGI("ntp", "sync is OK");
-    //     synced = 1;
-    // }
-    // else {
-    //     ESP_LOGE("ntp", "unknown state: year=%d, status=%d", time_info.tm_year, status);
-    // }
 }
 
 void ntp_init(void) {

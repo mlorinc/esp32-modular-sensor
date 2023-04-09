@@ -23,6 +23,7 @@
         "config.h": "c",
         "gptimer.h": "c",
         "mqtt.h": "c",
-        "temperature_predictor.h": "c"
+        "temperature_predictor.h": "c",
+        "event_groups.h": "c"
     }
 }

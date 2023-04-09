@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
 #include "esp_system.h"
@@ -9,16 +8,23 @@
 #include "driver/gpio.h"
 #include "wifi.h"
 #include "utc.h"
+#include "utils.h"
 #include "dht11.h"
 #include "config.h"
 #include "probe.h"
 #include "mqtt.h"
 #include "temperature_predictor.h"
+#include "array_queue.h"
 
 #define MQTT_BUFFER_SIZE (256)
-#define REFRESH_INTERVAL (0.5*1000 * 60) // 1 minutes
+#define REFRESH_INTERVAL 3000 // (0.5*1000 * 60) // 30s
 #define STABILIZATION_WAIT (250)
 #define FAILURE_WAIT (250)
+
+
+float temperatures[8] = { 0 };
+float humidities[8] = { 0 };
+uint8_t measured_values = 0;
 
 void report_measurement(char *buffer, dht11_data_t *data) {
     ESP_LOGI("data", "CRC: %d\n", data->crc);
@@ -28,9 +34,9 @@ void report_measurement(char *buffer, dht11_data_t *data) {
     sprintf(buffer, "{utc:\"%s\",temperature:%d.%d,humidity:%d.%d}", get_utc_time(), data->temperature_integral, data->temperature_decimal, data->humidity_integral, data->humidity_decimal);
     int length = strlen(buffer);
     ESP_LOGI("data", "mqtt: %s", buffer);
-    if (mqtt_send_data(buffer, length) == -1) {
-        ESP_LOGE("data", "could not send data through MQTT");
-    }
+    // if (mqtt_send_data(buffer, length) == -1) {
+    //     ESP_LOGE("data", "could not send data through MQTT");
+    // }
 }
 
 void dht11_task(void *pvParameter)
@@ -66,7 +72,7 @@ void dht11_task(void *pvParameter)
             continue;
         }
 
-        printf("Time: %s\n", get_utc_time());
+        ESP_LOGI("wait", "Time: %s\n", get_utc_time());
         reset_probe();
         gpio_set_direction(GPIO_DHT11, GPIO_MODE_OUTPUT);
         gpio_set_level(GPIO_DHT11, 0);
@@ -83,6 +89,24 @@ void dht11_task(void *pvParameter)
         
         if (get_measurement(get_pin_data(GPIO_DHT11), &data) == ESP_OK) {
             report_measurement(buffer, &data);
+            #ifdef PREDICTION_MODE
+            queue_push(temperatures, 8, data.temperature_integral + decimal_to_float(data.temperature_decimal));
+            queue_push(humidities, 8, data.humidity_integral + decimal_to_float(data.humidity_decimal));
+            if (measured_values < 8) {
+                measured_values++;
+            }
+
+            if (measured_values == 8) {
+                float predicted_temperature = temperature_model_interfere(temperatures, humidities);
+                ESP_LOGI("measurement", "predicted temperature: %f\n", predicted_temperature);
+            }
+            else if (measured_values > 8) {
+                ESP_LOGE("measurement", "unexpected measured values state");
+            }
+            else {
+                ESP_LOGI("measurement", "skipping prediction; not enough data %u/8", measured_values);
+            }
+            #endif
         }
         else {
             ESP_LOGI("data", "error while measuring data from DHT11");
@@ -100,12 +124,17 @@ void app_main()
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(gpio_set_direction(GPIO_DHT11, GPIO_MODE_INPUT));
 
+    if(temperature_model_init() != 0) {
+        ESP_LOGE("tf", "could not init Tensorflow Lite");
+        return;
+    }
+
     if (wifi_init() != ESP_OK)
     {
         ESP_LOGE("wifi", "could not connect to the wifi");
         return;
     }
-    
+
     ntp_init();
     register_pin(GPIO_DHT11, 16);
     xTaskCreate(&dht11_task, "dht11_task", 4096, NULL, 5, NULL);

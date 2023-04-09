@@ -1,13 +1,8 @@
-#include <string.h>
-#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
-#include "esp_system.h"
 #include "esp_wifi.h"
-#include "esp_event.h"
 #include "esp_log.h"
-#include "nvs_flash.h"
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
@@ -20,7 +15,7 @@
    If you'd rather not, just change the below entries to strings with
    the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
 */
-#define EXAMPLE_ESP_WIFI_SSID "pinzosheesh"
+#define EXAMPLE_ESP_WIFI_SSID "OPER" // "pinzosheesh"
 #define EXAMPLE_ESP_WIFI_PASS "motorspsjm231"
 #define EXAMPLE_ESP_MAXIMUM_RETRY 10
 
@@ -182,7 +177,7 @@ int wifi_init(void)
              * used. Incase your Access point
              * doesn't support WPA2, these mode can be enabled by commenting
              * below line */
-            .threshold.authmode = WIFI_AUTH_WPA3_PSK,
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
             .pmf_cfg = {
                 .capable = true,
                 .required = false},

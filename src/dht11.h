@@ -1,6 +1,5 @@
 #ifndef __H_DHT11
 #define __H_DHT11
-#include <stdlib.h>
 #include "driver/gpio.h"
 #include "probe.h"
 

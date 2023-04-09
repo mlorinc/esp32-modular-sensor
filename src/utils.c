@@ -47,3 +47,17 @@ int hw_timer_stop(gptimer_handle_t timer) {
     gptimer_disable(timer);
     return gptimer_del_timer(timer);
 }
+
+float decimal_to_float(uint8_t number) {
+    if (number < 10)
+    {
+        return number / 10.0f;
+    }
+    
+    if (number < 100)
+    {
+        return number / 100.0f;
+    }
+    
+    return number / 1000.0f;
+}
