@@ -20,5 +20,5 @@ void ntp_stop(void);
 /**
  * Check if time is set.
 */
-uint8_t is_synced();
+uint8_t is_time_synced();
 #endif

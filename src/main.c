@@ -10,6 +10,7 @@
 #include "utc.h"
 #include "utils.h"
 #include "dht11.h"
+#include "ds18b20_sensor.h"
 #include "config.h"
 #include "probe.h"
 #include "mqtt.h"
@@ -40,7 +41,7 @@ void report_measurement(char *buffer, dht11_data_t *data)
     }
 }
 
-void dht11_task(void *pvParameter)
+void sensor_task(void *pvParameter)
 {
     probe_measurement_t dht_data[DHT11_FRAME_SIZE] = {0};
     probe_t dht = probe_init(GPIO_DHT11, DHT11_FRAME_SIZE, dht_data);
@@ -48,13 +49,14 @@ void dht11_task(void *pvParameter)
     dht11_data_t data = {0};
     char buffer[MQTT_BUFFER_SIZE] = {0};
 
-    while (!is_synced())
+    while (!is_time_synced())
     {
         ESP_LOGE("ntp", "waiting ntp to be synced");
         vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
 
     vTaskDelay(2000 / portTICK_PERIOD_MS);
+    ds18b20_sensor_init();  
 
     ESP_LOGE("mqtt", "mqtt init");
     if (mqtt_init() != ESP_OK)
@@ -72,7 +74,7 @@ void dht11_task(void *pvParameter)
 
     while (1)
     {
-        if (!is_synced() || !mqtt_connected())
+        if (!is_time_synced() || !mqtt_connected())
         {
             vTaskDelay(2000 / portTICK_PERIOD_MS);
             continue;
@@ -90,6 +92,8 @@ void dht11_task(void *pvParameter)
             continue;
         }
 
+        float temperature = ds18b20_sensor_get();
+        printf("ds18b20 temperature: %f\n", temperature);
         if (dht11_get_measurement(dht11_get_data(&dht), &data) == ESP_OK)
         {
             report_measurement(buffer, &data);
@@ -104,7 +108,7 @@ void dht11_task(void *pvParameter)
             if (measured_values == 8)
             {
                 float predicted_temperature = temperature_model_interfere(temperatures, humidities);
-                ESP_LOGI("measurement", "predicted temperature: %f\n", predicted_temperature);
+                ESP_LOGI("measurement", "predicted temperature: %f", predicted_temperature);
             }
             else if (measured_values > 8)
             {
@@ -112,7 +116,7 @@ void dht11_task(void *pvParameter)
             }
             else
             {
-                ESP_LOGI("measurement", "skipping prediction; not enough data %u/8", measured_values);
+                ESP_LOGI("measurement", "skipping prediction; not enough data %u", measured_values);
             }
 #endif
         }
@@ -146,5 +150,5 @@ void app_main()
     }
 
     ntp_init();
-    xTaskCreate(&dht11_task, "dht11_task", 4096, NULL, 5, NULL);
+    xTaskCreate(&sensor_task, "sensor_task", 4096, NULL, 5, NULL);
 }

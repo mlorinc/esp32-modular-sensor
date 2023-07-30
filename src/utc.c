@@ -25,7 +25,7 @@ void ntp_stop(void) {
     sntp_stop();
 }
 
-uint8_t is_synced() {
+uint8_t is_time_synced() {
     return synced;
 }
 
